@@ -12,7 +12,7 @@ from mlx.utils import tree_map
 from safetensors.numpy import load_file
 import numpy as np
 
-from .mert2 import MERT2MelFrontend, MERT2Model, COMPUTE_DTYPE
+from .mert2 import MERT2MelFrontend, MERT2Model, COMPUTE_DTYPE, normalize_waveform
 from .decoder import SheetSage2Decoder
 
 
@@ -208,6 +208,7 @@ class SheetSage2MLX:
         Encode raw 24kHz audio waveform to (1, frames, 512) memory.
         audio: 1D numpy array of float32 samples.
         """
+        audio = normalize_waveform(audio)
         mel = self.frontend(audio)
         memory = self.encoder(mel)
         mx.eval(memory)

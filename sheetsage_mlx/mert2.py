@@ -6,6 +6,7 @@ using ConvNeXt subsampling, 24-layer Conformer, and layer mixing.
 
 from typing import Optional, Tuple, List
 import math
+import os
 import mlx.core as mx
 import mlx.nn as nn
 from scipy import signal
@@ -13,6 +14,30 @@ import numpy as np
 
 # 推論時の演算 dtype。Metal では fp16 がネイティブ高速（bf16 は fp32 相当にフォールバック）。
 COMPUTE_DTYPE = mx.float16
+
+# 入力音量の正規化設定。
+# モデルは固定の mel 統計 (mel_mean/mel_std) のみで正規化するため入力音量に敏感で、
+# 小音量の音源では学習分布から外れて音符がほとんど出ない。RMS を目標値へ増幅する。
+INPUT_RMS_TARGET = 0.1
+INPUT_MAX_GAIN = 30.0
+
+
+def normalize_waveform(audio: np.ndarray) -> np.ndarray:
+    """
+    入力波形の RMS を INPUT_RMS_TARGET に近づける (小音量のみ増幅、上限付き)。
+    大きい音源は変更しない (増幅のみ)。SHEETSAGE_INPUT_NORM=0 で無効化。
+    """
+    if os.environ.get("SHEETSAGE_INPUT_NORM", "1") == "0":
+        return audio
+    if audio.size == 0:
+        return audio
+    rms = float(np.sqrt(np.mean(np.square(audio, dtype=np.float64))))
+    if rms <= 1e-9:
+        return audio
+    gain = INPUT_RMS_TARGET / rms
+    if gain <= 1.0:
+        return audio
+    return audio * min(gain, INPUT_MAX_GAIN)
 
 
 class MERT2MelFrontend:
