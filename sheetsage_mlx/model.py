@@ -8,10 +8,11 @@ from typing import Optional, Tuple, List
 import time
 import mlx.core as mx
 import mlx.nn as nn
+from mlx.utils import tree_map
 from safetensors.numpy import load_file
 import numpy as np
 
-from .mert2 import MERT2MelFrontend, MERT2Model
+from .mert2 import MERT2MelFrontend, MERT2Model, COMPUTE_DTYPE
 from .decoder import SheetSage2Decoder
 
 
@@ -67,6 +68,22 @@ class SheetSage2MLX:
         self.decoder = SheetSage2Decoder()
         self._load_decoder_weights(weights)
 
+        # 3.5 fp16 推論化 (Metal 高速パス)
+        # matmul は mixed dtype を fp32 に昇格させるため、fp32 の重みが 1 つでも
+        # 残ると活性ストリーム全体が fp32 化し高速化が無効になる。漏れなく一括変換する。
+        self.encoder.update(
+            tree_map(lambda a: a.astype(COMPUTE_DTYPE), self.encoder.parameters())
+        )
+        self.decoder.update(
+            tree_map(lambda a: a.astype(COMPUTE_DTYPE), self.decoder.parameters())
+        )
+        # 数値的に敏感な小テンソルは fp32 に戻す (層混合 softmax / RoPE 周波数)。
+        # 活性へ乗算する直前でそれぞれ dtype を戻すため fp16 ストリームは崩れない。
+        self.encoder.layer_weight = self.encoder.layer_weight.astype(mx.float32)
+        self.encoder.embed_positions.inv_freq = (
+            self.encoder.embed_positions.inv_freq.astype(mx.float32)
+        )
+
         # 4. Tokenizer parameters
         self.sampling_rate = 24000
         self.vocab_size = 31678
@@ -74,7 +91,11 @@ class SheetSage2MLX:
         self.time_hz = 100
         self.input_audio_length = 300.0  # 300 seconds
 
-        print(f"[MLX] SheetSage2 initialized successfully in {time.time() - t0:.2f}s", flush=True)
+        print(
+            f"[MLX] SheetSage2 initialized successfully in {time.time() - t0:.2f}s "
+            f"(compute dtype: {COMPUTE_DTYPE})",
+            flush=True,
+        )
 
     def _load_encoder_weights(self, weights: dict):
         enc = self.encoder

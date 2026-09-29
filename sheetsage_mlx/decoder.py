@@ -69,7 +69,13 @@ class BartAttention(nn.Module):
 
         if mask is None and self.is_causal and T_q > 1:
             indices = mx.arange(T_q)
-            causal_mask = (indices[:, None] < indices[None, :]) * -1e9
+            # SDPA は mask が出力 dtype に昇格可能であることを要求するため活性 dtype で作る。
+            # -1e9 は fp16 で -inf に落ちるので、dtype の最小有限値を使う。
+            causal_mask = mx.where(
+                indices[:, None] < indices[None, :],
+                mx.finfo(q.dtype).min,
+                0.0,
+            ).astype(q.dtype)
             attn_weights = mx.fast.scaled_dot_product_attention(q, k, v, scale=self.scale, mask=causal_mask)
         else:
             attn_weights = mx.fast.scaled_dot_product_attention(q, k, v, scale=self.scale, mask=mask)
@@ -159,5 +165,6 @@ class SheetSage2Decoder(nn.Module):
             )
             new_caches.append((new_self, new_cross))
 
-        logits = x @ self.embed_tokens.T
+        # 語彙 31678 上の貪欲 argmax を安定させるため logits は fp32 で返す
+        logits = (x @ self.embed_tokens.T).astype(mx.float32)
         return logits, new_caches

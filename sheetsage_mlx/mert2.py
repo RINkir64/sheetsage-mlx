@@ -11,6 +11,9 @@ import mlx.nn as nn
 from scipy import signal
 import numpy as np
 
+# 推論時の演算 dtype。Metal では fp16 がネイティブ高速（bf16 は fp32 相当にフォールバック）。
+COMPUTE_DTYPE = mx.float16
+
 
 class MERT2MelFrontend:
     """Mel filterbank feature extractor using scipy STFT and pre-computed weights."""
@@ -24,7 +27,7 @@ class MERT2MelFrontend:
     def __call__(self, audio: np.ndarray) -> mx.array:
         """
         audio: 1D numpy array of samples at 24000Hz
-        returns: (1, time_frames, 128) MLX float32 array
+        returns: (1, time_frames, 128) MLX array in COMPUTE_DTYPE
         """
         f, t, zxx = signal.stft(
             audio,
@@ -40,7 +43,7 @@ class MERT2MelFrontend:
         mel = (magnitude.T @ self.fb)[:-1]  # (frames - 1, 128)
         db = 10.0 * np.log10(np.maximum(mel, 1e-10))
         norm = (db - self.mel_mean) / np.maximum(self.mel_std, 1e-5)
-        return mx.array(norm[None, :, :], dtype=mx.float32)
+        return mx.array(norm[None, :, :], dtype=COMPUTE_DTYPE)
 
 
 class GlobalResponseNorm(nn.Module):
@@ -50,8 +53,10 @@ class GlobalResponseNorm(nn.Module):
         self.bias = mx.zeros((1, 1, dim))
 
     def __call__(self, x: mx.array) -> mx.array:
-        magnitude = mx.linalg.norm(x, ord=2, axis=1, keepdims=True)
+        # 2乗和の縮約は fp16 でオーバーフローし得るため fp32 で計算し、結果のみ戻す
+        magnitude = mx.linalg.norm(x.astype(mx.float32), ord=2, axis=1, keepdims=True)
         normalized = magnitude / (mx.mean(magnitude, axis=-1, keepdims=True) + 1e-6)
+        normalized = normalized.astype(x.dtype)
         return self.weight * (x * normalized) + self.bias + x
 
 
@@ -103,11 +108,12 @@ class RotaryEmbedding(nn.Module):
         self.inv_freq = 1.0 / (base ** (indices / head_dim))
 
     def __call__(self, length: int) -> Tuple[mx.array, mx.array]:
+        # 周波数と角度は fp32 で計算し、回転適用の直前に演算 dtype へ落とす
         positions = mx.arange(length, dtype=mx.float32)
-        freqs = mx.outer(positions, self.inv_freq)
+        freqs = mx.outer(positions, self.inv_freq.astype(mx.float32))
         angles = mx.concatenate([freqs, freqs], axis=-1)
-        cos = mx.cos(angles)[None, :, None, :]
-        sin = mx.sin(angles)[None, :, None, :]
+        cos = mx.cos(angles)[None, :, None, :].astype(COMPUTE_DTYPE)
+        sin = mx.sin(angles)[None, :, None, :].astype(COMPUTE_DTYPE)
         return cos, sin
 
 
@@ -236,7 +242,8 @@ class MERT2Model(nn.Module):
         for block in self.subsampling:
             h = block(h)
 
-        weights = mx.softmax(self.layer_weight, axis=0)
+        # 層混合の softmax は fp32 で計算し、活性 dtype へ戻して fp16 ストリームを維持
+        weights = mx.softmax(self.layer_weight.astype(mx.float32), axis=0).astype(h.dtype)
         mixed = h * weights[0]
 
         T = h.shape[1]
