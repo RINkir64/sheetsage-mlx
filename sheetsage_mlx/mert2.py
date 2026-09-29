@@ -19,13 +19,16 @@ COMPUTE_DTYPE = mx.float16
 # モデルは固定の mel 統計 (mel_mean/mel_std) のみで正規化するため入力音量に敏感で、
 # 小音量の音源では学習分布から外れて音符がほとんど出ない。RMS を目標値へ増幅する。
 INPUT_RMS_TARGET = 0.1
-INPUT_MAX_GAIN = 30.0
+INPUT_MAX_GAIN = 10.0
+INPUT_PEAK_CEILING = 0.99
 
 
 def normalize_waveform(audio: np.ndarray) -> np.ndarray:
     """
-    入力波形の RMS を INPUT_RMS_TARGET に近づける (小音量のみ増幅、上限付き)。
-    大きい音源は変更しない (増幅のみ)。SHEETSAGE_INPUT_NORM=0 で無効化。
+    入力波形の RMS を INPUT_RMS_TARGET に近づける (小音量のみ増幅)。
+    クリップ歪みは広帯域ノイズを生み、モデルがそれを音符化してしまうため、
+    ピークが INPUT_PEAK_CEILING を超えないようゲインを制限する。
+    増幅のみ (大きい音源は変更しない)。SHEETSAGE_INPUT_NORM=0 で無効化。
     """
     if os.environ.get("SHEETSAGE_INPUT_NORM", "1") == "0":
         return audio
@@ -37,7 +40,13 @@ def normalize_waveform(audio: np.ndarray) -> np.ndarray:
     gain = INPUT_RMS_TARGET / rms
     if gain <= 1.0:
         return audio
-    return audio * min(gain, INPUT_MAX_GAIN)
+    peak = float(np.max(np.abs(audio)))
+    if peak > 0:
+        gain = min(gain, INPUT_PEAK_CEILING / peak)
+    gain = min(gain, INPUT_MAX_GAIN)
+    if gain <= 1.0:
+        return audio
+    return audio * gain
 
 
 class MERT2MelFrontend:
