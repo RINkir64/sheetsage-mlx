@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sheetsage-mlx"
+version = "0.1.0"
+description = "Apple Silicon native music transcription with SheetSage2 and MLX (15x-25x realtime)"
+readme = "README.md"
+authors = [{ name = "RINkir64" }]
+license = { text = "CC-BY-NC-4.0" }
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Multimedia :: Sound/Audio :: Analysis",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "mlx>=0.20.0",
+    "numpy>=1.20.0",
+    "scipy>=1.9.0",
+    "safetensors>=0.4.0",
+    "mido>=1.2.10",
+    "mir_eval>=0.8.0",
+    "huggingface_hub>=0.20.0",
+]
+
+[project.scripts]
+sheetsage-mlx = "sheetsage_mlx.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["sheetsage_mlx*"]
