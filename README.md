@@ -1,9 +1,19 @@
+---
+license: cc-by-nc-4.0
+library_name: mlx
+pipeline_tag: feature-extraction
+---
+
 # SheetSage2-MLX 🎼⚡
 
 [![License: CC BY-NC 4.0](https://img.shields.io/badge/License-CC%20BY--NC%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc/4.0/)
 [![Framework: MLX](https://img.shields.io/badge/Framework-Apple%20MLX-orange.svg)](https://github.com/ml-explore/mlx)
 [![Platform: macOS](https://img.shields.io/badge/Platform-macOS%20(Apple%20Silicon)-blue.svg)]()
 [![Python: 3.10+](https://img.shields.io/badge/Python-3.10%2B-green.svg)]()
+
+**This model is an Apple Silicon implementation of [SheetSage2](https://huggingface.co/m-a-p/SheetSage2), presented in the paper [YuE2: Unifying Symbolic and Audio Music Generation at Frontier Quality](https://huggingface.co/papers/2609.33757).**
+
+Project page: [https://map-yue2.github.io/](https://map-yue2.github.io/) · Code: [https://github.com/multimodal-art-projection/YuE](https://github.com/multimodal-art-projection/YuE)
 
 **SheetSage2-MLX** is an ultra-fast, native Apple Silicon implementation of [SheetSage2](https://huggingface.co/m-a-p/SheetSage2), powered by Apple's [MLX](https://github.com/ml-explore/mlx) machine learning framework.
 
@@ -115,14 +125,18 @@ sheetsage-mlx audio.mp3 -o ./output -t 30.0
 
 This project is released under the **Creative Commons Attribution-NonCommercial 4.0 International License ([CC-BY-NC-4.0](https://creativecommons.org/licenses/by-nc/4.0/))**, inheriting the license of the original SheetSage2 model.
 
-If you use this work, please cite the original SheetSage2 authors:
+SheetSage2 is part of the **YuE2** family. If you use this work, please cite the YuE2 paper:
 
 ```bibtex
-@article{sheetsage2,
-  title={SheetSage2: Advancing Music Transcription with Foundation Audio Models},
-  author={m-a-p team},
-  journal={arXiv preprint arXiv:2609.33757},
-  year={2026}
+@article{yuan2026yue2,
+  title = {{YuE2}: Unifying Symbolic and Audio Music Generation at Frontier Quality},
+  author = {Yuan, Ruibin and Pan, Jiahao and Jiang, Junyan and Wu, Zhiyue and Zhou, Ziya and Sun, Jiankai and Li, Yizhi and Zhang, Ge and Gu, Yicheng and Tian, Zeyue and Dai, Junyu and Lin, Hanfeng and Li, Kai and Wu, Shangda and Liu, Xuanjie and Wang, Jiaming and Liu, Zihan and Wang, Yue and Ma, Yinghao and Yin, Hanzhi and Chen, Kangrui and Zhang, Xinyue and Ma, Ziyang and Liao, Mengqi and Zhao, Hejia and Huang, Guowei and Yan, Chao and Ke, Lei and Yu, Jianwei and Liu, Bei and Guo, Joe and Xue, Liumeng and Xia, Gus and Xue, Wei and Guo, Yike},
+  journal = {arXiv preprint arXiv:2609.33757},
+  year = {2026},
+  eprint = {2609.33757},
+  archivePrefix = {arXiv},
+  primaryClass = {eess.AS},
+  url = {https://arxiv.org/abs/2609.33757}
 }
 ```
 
