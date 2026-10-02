@@ -73,8 +73,48 @@ def generate_midi_files(
         mid.save(str(target_path))
         return target_path
 
+    def _write_multitrack_midi(groups: List[Tuple[str, List[Tuple], int]], target_path: Path):
+        """(track name, notes, MIDI channel) ごとに別トラックへ書き出す type-1 MIDI。
+
+        各トラックのティックは絶対秒から独立に計算するため誤差は蓄積せず、
+        全トラックが同じ時間軸上に揃う (DAW で読み込んでもずれない)。
+        空のトラックも作成する (DAW でミュート/ソロや音符貼り付けのレーンを保証)。
+        """
+        mid = MidiFile(ticks_per_beat=480, type=1)
+        conductor = MidiTrack()
+        mid.tracks.append(conductor)
+        conductor.append(MetaMessage("track_name", name="SheetSage2", time=0))
+        conductor.append(MetaMessage("set_tempo", tempo=mido.bpm2tempo(bpm), time=0))
+        conductor.append(MetaMessage("time_signature", numerator=4, denominator=4, time=0))
+
+        ticks_per_sec = (bpm / 60.0) * 480.0
+        for track_name, notes_list, channel in groups:
+            track = MidiTrack()
+            mid.tracks.append(track)
+            track.append(MetaMessage("track_name", name=track_name, time=0))
+
+            midi_events = []
+            for t_start, t_end, pitch, _ in notes_list:
+                midi_events.append((t_start, "note_on", pitch, 85))
+                midi_events.append((t_end, "note_off", pitch, 0))
+            midi_events.sort(key=lambda x: (x[0], 0 if x[1] == "note_off" else 1))
+
+            prev_time = 0.0
+            for t, ev_type, pitch, vel in midi_events:
+                delta_sec = max(0.0, t - prev_time)
+                prev_time = t
+                track.append(Message(ev_type, note=pitch, velocity=vel,
+                                     time=int(round(delta_sec * ticks_per_sec)), channel=channel))
+
+        mid.save(str(target_path))
+        return target_path
+
     results = {}
-    f_all = _write_midi(all_notes, output_dir / f"{p}transcription.mid", "Full Transcription")
+    # transcription.mid: Vocal / Instrumental を別トラックに分けて収録
+    f_all = _write_multitrack_midi(
+        [("Vocal Melody", vocal_notes, 0), ("Instrumental Melody", inst_notes, 1)],
+        output_dir / f"{p}transcription.mid",
+    )
     if f_all:
         results["transcription"] = f_all
         # also copy to melody.mid

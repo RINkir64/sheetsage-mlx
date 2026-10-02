@@ -75,14 +75,41 @@ def convert_events_to_standard(decoded_events: List[Dict[str, Any]]) -> List[Dic
     return standard_events
 
 
-def generate_abc_text(events: List[Dict[str, Any]], title: str = "Sheet Music") -> str:
+def estimate_bpm(events: List[Dict[str, Any]], default_bpm: float = 120.0) -> float:
+    """
+    タイムスタンプアンカーから曲のテンポ (BPM) を推定する。
+
+    サブビートは 16分音符 (1拍 = 4サブビート)。音符イベントの間隔は休符で
+    疎になるため使わず、連続イベント間の「サブビートあたり秒数」の中央値から求める。
+    DAW で読み込んだときに拍グリッドが曲と一致し、テンポ不一致によるずれを防ぐ。
+    """
+    anchors = [
+        (int(ev.get("subbeat", 0)), float(ev["time"]))
+        for ev in events if ev.get("time") is not None
+    ]
+    if len(anchors) < 2:
+        return default_bpm
+    arr = np.array(sorted(anchors), dtype=np.float64)
+    diffs_t = np.diff(arr[:, 1])
+    diffs_s = np.maximum(np.diff(arr[:, 0]), 1)
+    step_seconds = float(np.median(diffs_t / diffs_s))
+    if not np.isfinite(step_seconds) or step_seconds <= 0:
+        return default_bpm
+    estimated = 60.0 / (step_seconds * 4)
+    if not (40 <= estimated <= 240):
+        return default_bpm
+    return float(round(estimated / 5) * 5)
+
+
+def generate_abc_text(events: List[Dict[str, Any]], title: str = "Sheet Music", bpm: Optional[float] = None) -> str:
     """Generate ABC notation text from standardized events."""
+    bpm = int(round(bpm if bpm else estimate_bpm(events)))
     lines = [
         "X:1",
         f"T:{title}",
         "M:4/4",
         "L:1/16",
-        "Q:1/4=120",
+        f"Q:1/4={bpm}",
         'V: Vocal clef=treble name="Vocal Melody" snm="Vocal"',
         'V: Ins clef=treble name="Ins Melody" snm="Inst."',
         "K:C",
@@ -221,7 +248,13 @@ def transcribe(
     t_dec = time.time() - t_dec_0
 
     # 5. Decode tokens into events
-    raw_events = tokenizer.decode_sequence(tokens)
+    # decode_sequence は {schema_version, prompts, events, has_eos} の dict を返す。
+    # 厳密デコードが失敗した場合は非厳密で復旧する (reference の挙動に準拠)。
+    try:
+        decoded = tokenizer.decode_sequence(tokens)
+    except ValueError:
+        decoded = tokenizer.decode_sequence(tokens, strict=False)
+    raw_events = decoded["events"] if isinstance(decoded, dict) else decoded
     events = convert_events_to_standard(raw_events)
 
     # Clean up temp wav
@@ -229,7 +262,10 @@ def transcribe(
         temp_wav.unlink(missing_ok=True)
 
     # 6. Render outputs
-    abc_text = generate_abc_text(events, title=song_title)
+    # MIDI は推定テンポで書き出す (ティック変換とテンポメタが一致するため絶対時間は不変。
+    # DAW に読み込んだとき拍グリッドが曲と揃い、プロジェクトテンポとの不一致によるずれを防ぐ)
+    midi_bpm = estimate_bpm(events)
+    abc_text = generate_abc_text(events, title=song_title, bpm=midi_bpm)
     (out_path / "score.abc").write_text(abc_text, encoding="utf-8")
 
     generated_files = {"score.abc": out_path / "score.abc"}
@@ -239,7 +275,7 @@ def transcribe(
     generated_files["events.json"] = out_path / "events.json"
 
     if render_midi:
-        midis = generate_midi_files(events, out_path, bpm=120.0)
+        midis = generate_midi_files(events, out_path, bpm=midi_bpm)
         generated_files.update(midis)
 
     if render_html:
